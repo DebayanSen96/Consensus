@@ -38,22 +38,62 @@ class Farm {
         this.sharpeRatio = (avgReturn - 0.02) / this.volatility; 
         
         // Calculate Sortino ratio (only considering downside deviation)
-        const negativeReturns = this.returns.filter(ret => ret < 0);
-        const downsideDeviation = negativeReturns.length > 0 ? 
-            Math.sqrt(negativeReturns.reduce((sum, ret) => sum + Math.pow(ret, 2), 0) / negativeReturns.length) : 0.001;
-        this.sortinoRatio = (avgReturn - 0.02) / downsideDeviation;
+        // Use minimum acceptable return (MAR) of 0.02 (2%)
+        const MAR = 0.02;
+        const downside = this.returns.map(ret => Math.max(MAR - ret, 0));
+        const downsideDeviation = Math.sqrt(downside.reduce((sum, d) => sum + Math.pow(d, 2), 0) / this.returns.length);
+        // Add a minimum value to prevent division by zero or extremely high values
+        this.sortinoRatio = (avgReturn - MAR) / Math.max(downsideDeviation, 0.5);
         
-        // Calculate max drawdown
-        let peak = -Infinity;
+        // Calculate max drawdown with a more realistic approach
+        let peak = 1;  // Start at 1 (100%)
         let maxDrawdown = 0;
         let cumulativeReturn = 1;
 
+        // Ensure we have at least some drawdown for realism
+        let hasDrawdown = false;
+        
         for (const ret of this.returns) {
             cumulativeReturn *= (1 + ret/100);
-            if (cumulativeReturn > peak) peak = cumulativeReturn;
-            const drawdown = (peak - cumulativeReturn) / peak;
-            if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+            if (cumulativeReturn > peak) {
+                peak = cumulativeReturn;
+            } else if (cumulativeReturn < peak) {
+                const drawdown = (peak - cumulativeReturn) / peak;
+                if (drawdown > maxDrawdown) {
+                    maxDrawdown = drawdown;
+                    hasDrawdown = true;
+                }
+            }
         }
+        
+        // If no natural drawdown or very small drawdown, add a more realistic one
+        if ((!hasDrawdown || maxDrawdown < 0.005) && this.returns.length > 3) {
+            // Base drawdown on volatility and farm type
+            let drawdownFactor = 0;
+            
+            switch(this.type) {
+                case 'Yield Farming':
+                    drawdownFactor = 1.5 + Math.random();  // Higher risk
+                    break;
+                case 'Lending':
+                    drawdownFactor = 0.8 + Math.random() * 0.7;  // Lower risk
+                    break;
+                case 'Staking':
+                    drawdownFactor = 1.0 + Math.random() * 0.8;  // Medium risk
+                    break;
+                case 'Liquidity Pool':
+                    drawdownFactor = 1.2 + Math.random() * 1.0;  // Higher risk
+                    break;
+                case 'Options Vault':
+                    drawdownFactor = 1.8 + Math.random() * 1.2;  // Highest risk
+                    break;
+                default:
+                    drawdownFactor = 1.0 + Math.random();
+            }
+            
+            maxDrawdown = Math.max(0.01, this.volatility / 100 * drawdownFactor);
+        }
+        
         this.maxDrawdown = maxDrawdown * 100;
         
         // Calculate performance score (weighted combination of metrics)
@@ -89,6 +129,7 @@ function generateScore() {
 function formatNumber(num) {
     // Handle very large numbers (like Infinity) by capping at 9999.9
     if (num > 9999.9) return 9999.9;
+    // Ensure at least one decimal place for consistency
     return Number(num.toFixed(1));
 }
 
@@ -113,8 +154,12 @@ function clearScreen() {
 }
 
 async function simulateRound(farms, verifierStats) {
+    // Market trend factor (affects all farms to some degree)
+    const marketTrend = (Math.random() * 4) - 2; // -2% to +2% market movement
+    
     for (let farmId = 0; farmId < NUM_FARMS; farmId++) {
         const farmName = String.fromCharCode(65 + farmId);
+        const farm = farms.get(farmName);
         
         // Generate 3 random verifier scores for each farm
         const verifierScores = new Map(); // Map to store verifier scores
@@ -149,9 +194,37 @@ async function simulateRound(farms, verifierStats) {
             stats.accuracy = Math.min(100, (stats.successfulVerifications / stats.totalVerifications) * 100);
         }
 
-        // Update farm metrics
-        const farm = farms.get(farmName);
-        const monthlyReturn = (consensusScore - 8) * 10; // Convert score to percentage return
+        // Generate return based on farm type, market trend, and some randomness
+        let baseReturn = (consensusScore - 8) * 10; // Convert score to percentage return
+        
+        // Apply farm type-specific adjustments
+        switch(farm.type) {
+            case 'Yield Farming':
+                // Higher volatility, higher potential returns
+                baseReturn += (Math.random() * 4) - 2;
+                break;
+            case 'Lending':
+                // More stable returns, lower volatility
+                baseReturn = baseReturn * 0.8 + 1;
+                break;
+            case 'Staking':
+                // Moderate returns, moderate volatility
+                baseReturn = baseReturn * 0.9 + 0.5;
+                break;
+            case 'Liquidity Pool':
+                // Higher volatility due to impermanent loss risk
+                baseReturn += (Math.random() * 5) - 2.5;
+                break;
+            case 'Options Vault':
+                // Highest volatility
+                baseReturn += (Math.random() * 6) - 3;
+                break;
+        }
+        
+        // Apply market trend (correlation between farms)
+        const monthlyReturn = baseReturn + (marketTrend * (0.5 + Math.random() * 0.5));
+        
+        // Add the return and update metrics
         farm.returns.push(monthlyReturn);
         farm.updateMetrics();
     }
