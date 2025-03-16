@@ -21,8 +21,10 @@ class Farm {
         this.returns = [];
         this.volatility = 0;
         this.sharpeRatio = 0;
+        this.sortinoRatio = 0;
         this.maxDrawdown = 0;
-        this.successRate = 0;
+        this.performanceScore = 0;
+        this.type = getFarmType(id);
     }
 
     updateMetrics() {
@@ -31,20 +33,47 @@ class Farm {
         // Calculate farm metrics based on historical returns
         const avgReturn = this.returns.reduce((a, b) => a + b, 0) / this.returns.length;
         this.volatility = Math.sqrt(this.returns.reduce((sum, ret) => sum + Math.pow(ret - avgReturn, 2), 0) / this.returns.length);
-        this.sharpeRatio = (avgReturn - 0.02) / this.volatility; // Assuming 2% risk-free rate
+        
+        // Calculate Sharpe ratio (assuming 2% risk-free rate)
+        this.sharpeRatio = (avgReturn - 0.02) / this.volatility; 
+        
+        // Calculate Sortino ratio (only considering downside deviation)
+        const negativeReturns = this.returns.filter(ret => ret < 0);
+        const downsideDeviation = negativeReturns.length > 0 ? 
+            Math.sqrt(negativeReturns.reduce((sum, ret) => sum + Math.pow(ret, 2), 0) / negativeReturns.length) : 0.001;
+        this.sortinoRatio = (avgReturn - 0.02) / downsideDeviation;
         
         // Calculate max drawdown
         let peak = -Infinity;
         let maxDrawdown = 0;
+        let cumulativeReturn = 1;
+
         for (const ret of this.returns) {
-            peak = Math.max(peak, ret);
-            maxDrawdown = Math.max(maxDrawdown, peak - ret);
+            cumulativeReturn *= (1 + ret/100);
+            if (cumulativeReturn > peak) peak = cumulativeReturn;
+            const drawdown = (peak - cumulativeReturn) / peak;
+            if (drawdown > maxDrawdown) maxDrawdown = drawdown;
         }
-        this.maxDrawdown = maxDrawdown;
+        this.maxDrawdown = maxDrawdown * 100;
         
-        // Calculate success rate (percentage of positive returns)
-        this.successRate = (this.returns.filter(r => r > 0).length / this.returns.length) * 100;
+        // Calculate performance score (weighted combination of metrics)
+        this.performanceScore = (this.sharpeRatio * 0.4) + (this.sortinoRatio * 0.4) - (this.maxDrawdown * 0.01) + (avgReturn * 2);
     }
+}
+
+// Farm types
+const FARM_TYPES = [
+    'Yield Farming',
+    'Lending',
+    'Staking',
+    'Liquidity Pool',
+    'Options Vault'
+];
+
+function getFarmType(id) {
+    // Assign a type based on farm ID (deterministic but seems random)
+    const index = id.charCodeAt(0) % FARM_TYPES.length;
+    return FARM_TYPES[index];
 }
 
 // Simulation parameters
@@ -58,6 +87,8 @@ function generateScore() {
 }
 
 function formatNumber(num) {
+    // Handle very large numbers (like Infinity) by capping at 9999.9
+    if (num > 9999.9) return 9999.9;
     return Number(num.toFixed(1));
 }
 
@@ -144,11 +175,13 @@ async function displayRankings(farms, verifierStats) {
         const avgReturn = farm.returns.length > 0 ? 
             formatNumber(farm.returns.reduce((a, b) => a + b, 0) / farm.returns.length) : 0;
         output += chalk.white.bold(`Farm ${farm.id.padEnd(2)}`) + 
-            chalk.gray(` | Return: ${avgReturn.toString().padStart(4)}% `) +
-            chalk.gray(`| Vol: ${formatNumber(farm.volatility).toString().padStart(4)}% `) +
-            chalk.gray(`| Sharpe: ${formatNumber(farm.sharpeRatio).toString().padStart(4)} `) +
-            chalk.gray(`| MaxDD: ${formatNumber(farm.maxDrawdown).toString().padStart(3)}% `) +
-            chalk.gray(`| Success: ${formatNumber(farm.successRate).toString().padStart(3)}%`) + '\n';
+            chalk.blue(` [${farm.type.padEnd(14)}]`) +
+            chalk.gray(` Score: ${formatNumber(farm.performanceScore).toString().padStart(6)} `) +
+            chalk.gray(`| Return: ${avgReturn.toString().padStart(5)}% `) +
+            chalk.gray(`| Vol: ${formatNumber(farm.volatility).toString().padStart(5)}% `) +
+            chalk.gray(`| Sharpe: ${formatNumber(farm.sharpeRatio).toString().padStart(5)} `) +
+            chalk.gray(`| Sortino: ${formatNumber(farm.sortinoRatio).toString().padStart(5)} `) +
+            chalk.gray(`| MaxDD: ${formatNumber(farm.maxDrawdown).toString().padStart(5)}% `) + '\n';
     }
 
     output += '\n' + chalk.yellow.bold("=== Verifier Rankings ===\n");
