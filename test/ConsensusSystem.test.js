@@ -21,7 +21,7 @@ describe("Consensus Algorithm", function () {
     // Deploy ConsensusAlgorithm
     const ConsensusAlgorithm = await ethers.getContractFactory("ConsensusAlgorithm");
     consensusAlgorithm = await ConsensusAlgorithm.deploy(
-      minStake,
+      minStake,  
       consensusThreshold,
       roundDuration,
       slashingPenalty

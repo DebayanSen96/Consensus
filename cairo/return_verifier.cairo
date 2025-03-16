@@ -29,7 +29,7 @@ func verify_return{
     assert_nn_le(return_value, proof_high)
     assert_nn_le(proof_low, return_value)
     
-    # Additional cryptographic checks would go here
+    # Additional cryptographic checks would go here 
     # Including FFT-based polynomial evaluation
     
     return (1)  # Return 1 if verification succeeds
